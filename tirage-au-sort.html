@@ -229,6 +229,66 @@
   }
   .stat b{color:var(--ink);}
 
+  .link-btn{
+    background:none;
+    border:none;
+    color:var(--sky-dark);
+    font-family:'Inter',sans-serif;
+    font-size:12.5px;
+    text-decoration:underline;
+    padding:0;
+    margin-top:8px;
+    cursor:pointer;
+  }
+  .breakdown{
+    margin-top:10px;
+    max-height:220px;
+    overflow-y:auto;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:4px 14px;
+  }
+  .breakdown-row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:8px 0;
+    border-bottom:1px solid var(--line);
+    font-size:13px;
+  }
+  .breakdown-row:last-child{border-bottom:none;}
+  .breakdown-row .n{color:var(--ink);}
+  .breakdown-row .c{
+    font-family:'IBM Plex Mono',monospace;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+
+  .history-entry{
+    padding:14px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .history-entry:last-child{border-bottom:none;}
+  .history-entry .h-date{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:.04em;
+    margin-bottom:4px;
+  }
+  .history-entry .h-title{
+    font-family:'Archivo',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    color:var(--ink);
+    margin-bottom:4px;
+  }
+  .history-entry .h-winners{
+    font-size:13px;
+    color:var(--ink);
+  }
+  .history-entry .h-winners b{color:var(--sky-dark);}
+
   button{
     font-family:'Archivo',sans-serif;
     cursor:pointer;
@@ -600,8 +660,19 @@ Sophie Bernard
       Un seul ticket par personne (ignore les doublons de commentaires)
     </label>
 
+    <label class="check">
+      <input type="checkbox" id="excludePastWinners">
+      Exclure les gagnants des tirages précédents
+    </label>
+
     <p class="stat" id="stat">0 ticket valide</p>
+    <button type="button" id="toggleBreakdown" class="link-btn" style="display:none;">Voir le détail des tickets par personne</button>
+    <div id="ticketBreakdown" class="breakdown" style="display:none;"></div>
     <p class="error" id="error"></p>
+
+    <div class="row" style="margin-top:16px;">
+      <button type="button" id="exportParticipantsBtn" class="mode-btn" style="flex:1;">Télécharger la liste des participants</button>
+    </div>
 
     <div class="field" style="margin-top:16px;">
       <label>Animation du tirage</label>
@@ -622,6 +693,15 @@ Sophie Bernard
     <div class="actions" id="actions" style="display:none;">
       <button id="copyBtn">Copier le résultat</button>
       <button id="resetBtn">Nouveau tirage</button>
+    </div>
+  </div>
+
+  <div class="card" id="historyCard" style="display:none;">
+    <h2>Historique des tirages</h2>
+    <p class="hint">Mémorisé dans ce navigateur uniquement — pas partagé entre admins ni entre appareils.</p>
+    <div id="historyList"></div>
+    <div class="row" style="margin-top:14px;">
+      <button type="button" id="clearHistoryBtn" class="mode-btn" style="flex:1;">Effacer l'historique</button>
     </div>
   </div>
 
@@ -682,6 +762,13 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   const winnerCountEl = document.getElementById('winnerCount');
   const excludeEl = document.getElementById('exclude');
   const dedupeEl = document.getElementById('dedupe');
+  const excludePastWinnersEl = document.getElementById('excludePastWinners');
+  const toggleBreakdownBtn = document.getElementById('toggleBreakdown');
+  const ticketBreakdownEl = document.getElementById('ticketBreakdown');
+  const exportParticipantsBtn = document.getElementById('exportParticipantsBtn');
+  const historyCard = document.getElementById('historyCard');
+  const historyList = document.getElementById('historyList');
+  const clearHistoryBtn = document.getElementById('clearHistoryBtn');
   const statEl = document.getElementById('stat');
   const errorEl = document.getElementById('error');
   const drawBtn = document.getElementById('drawBtn');
@@ -690,7 +777,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   const actions = document.getElementById('actions');
   const copyBtn = document.getElementById('copyBtn');
   const resetBtn = document.getElementById('resetBtn');
-  const modeButtons = document.querySelectorAll('.mode-btn');
+  const modeButtons = document.querySelectorAll('#modeSelect .mode-btn');
   const contestSubjectEl = document.getElementById('contestSubject');
   const contestPrizeEl = document.getElementById('contestPrize');
   const ticketPageUrlEl = document.getElementById('ticketPageUrl');
@@ -740,6 +827,60 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   let lastWinners = [];
 
   const MAX_NAME_LENGTH = 60;
+  const HISTORY_KEY = 'objectifChalonnais_history';
+
+  function loadHistory(){
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+
+  function saveHistory(list){
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); }
+    catch (e) { /* pas grave, l'historique restera juste vide au prochain chargement */ }
+  }
+
+  let drawHistory = loadHistory();
+
+  function getPastWinnersSet(){
+    const set = new Set();
+    drawHistory.forEach(entry => {
+      (entry.winners || []).forEach(n => set.add(n.toLowerCase()));
+    });
+    return set;
+  }
+
+  function renderHistory(){
+    if (drawHistory.length === 0){
+      historyCard.style.display = 'none';
+      return;
+    }
+    historyCard.style.display = 'block';
+    historyList.innerHTML = drawHistory.slice().reverse().map(entry => {
+      const titleParts = [];
+      if (entry.subject) titleParts.push(escapeHtml(entry.subject));
+      if (entry.prize) titleParts.push(escapeHtml(entry.prize));
+      const title = titleParts.length ? titleParts.join(' · ') : 'Tirage sans détails';
+      const winnersHtml = (entry.winners || []).map(n => `<b>${escapeHtml(n)}</b>`).join(', ');
+      return `
+        <div class="history-entry">
+          <div class="h-date">${escapeHtml(entry.date || '')}</div>
+          <div class="h-title">${title}</div>
+          <div class="h-winners">${winnersHtml}</div>
+        </div>
+      `;
+    }).join('');
+  }
+  renderHistory();
+
+  clearHistoryBtn.addEventListener('click', () => {
+    if (!confirm("Effacer tout l'historique des tirages précédents ? Cette action est irréversible.")) return;
+    drawHistory = [];
+    saveHistory(drawHistory);
+    renderHistory();
+    updateStat();
+  });
 
   function getPool(){
     const excludeList = excludeEl.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -747,6 +888,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       .map(s => s.trim().slice(0, MAX_NAME_LENGTH))
       .filter(Boolean);
     list = list.filter(n => !excludeList.includes(n.toLowerCase()));
+    if (excludePastWinnersEl.checked){
+      const pastWinners = getPastWinnersSet();
+      list = list.filter(n => !pastWinners.has(n.toLowerCase()));
+    }
     if (dedupeEl.checked){
       const seen = new Set();
       const out = [];
@@ -759,6 +904,29 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     return list;
   }
 
+  function renderTicketBreakdown(pool){
+    const counts = new Map();
+    pool.forEach(n => {
+      const key = n.toLowerCase();
+      if (!counts.has(key)) counts.set(key, { name: n, count: 0 });
+      counts.get(key).count++;
+    });
+    const rows = Array.from(counts.values()).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    ticketBreakdownEl.innerHTML = rows.map(r => `
+      <div class="breakdown-row">
+        <span class="n">${escapeHtml(r.name)}</span>
+        <span class="c">${r.count} ticket${r.count > 1 ? 's' : ''}</span>
+      </div>
+    `).join('');
+  }
+
+  toggleBreakdownBtn.addEventListener('click', () => {
+    const isHidden = ticketBreakdownEl.style.display === 'none';
+    if (isHidden) renderTicketBreakdown(getPool());
+    ticketBreakdownEl.style.display = isHidden ? 'block' : 'none';
+    toggleBreakdownBtn.textContent = isHidden ? 'Masquer le détail des tickets' : 'Voir le détail des tickets par personne';
+  });
+
   function updateStat(){
     const pool = getPool();
     const uniquePeople = new Set(pool.map(n => n.toLowerCase())).size;
@@ -769,10 +937,42 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       html += `<br><span style="color:#B23A2E;">⚠ ${truncatedCount} ligne${truncatedCount>1?'s':''} trop longue${truncatedCount>1?'s':''} (raccourcie${truncatedCount>1?'s':''} à ${MAX_NAME_LENGTH} caractères) — vérifie que ta liste contient bien un nom par ligne.</span>`;
     }
     statEl.innerHTML = html;
+    toggleBreakdownBtn.style.display = pool.length > 0 ? 'inline' : 'none';
+    if (ticketBreakdownEl.style.display !== 'none') renderTicketBreakdown(pool);
   }
-  [namesEl, excludeEl, dedupeEl].forEach(el => el.addEventListener('input', updateStat));
-  dedupeEl.addEventListener('change', updateStat);
+  [namesEl, excludeEl, dedupeEl, excludePastWinnersEl].forEach(el => el.addEventListener('input', updateStat));
+  [dedupeEl, excludePastWinnersEl].forEach(el => el.addEventListener('change', updateStat));
   updateStat();
+
+  exportParticipantsBtn.addEventListener('click', () => {
+    const rawLines = namesEl.value.replace(/\r\n?/g, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+    if (rawLines.length === 0){
+      alert('Ajoute des participants avant de télécharger la liste.');
+      return;
+    }
+    const subject = contestSubjectEl.value.trim();
+    const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const header = [
+      "L'Objectif Châlonnais — Liste des participants",
+      subject ? `Concours : ${subject}` : null,
+      `Date d'export : ${dateStr}`,
+      `Nombre de lignes : ${rawLines.length}`,
+      '',
+      '---',
+      ''
+    ].filter(l => l !== null);
+    const content = header.join('\n') + rawLines.join('\n') + '\n';
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const slug = subject ? slugify(subject) : 'participants';
+    a.download = `participants-${slug || 'liste'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  });
 
   const timeRe = /(^|\s)\d{1,3}\s?(min|h|j|sem|mois|an)s?(\s|$|·)/i;
   const metaRe = /(j.?aime|répondre|reply|^like$|voir la traduction|modifié|réponses?|masquer|^auteur$)/i;
@@ -1025,6 +1225,16 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
     const subject = contestSubjectEl.value.trim();
     const prize = contestPrizeEl.value.trim();
+
+    drawHistory.push({
+      date: new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      subject: subject,
+      prize: prize,
+      winners: winners.slice()
+    });
+    saveHistory(drawHistory);
+    renderHistory();
+
     let meta = '';
     if (subject || prize){
       const parts = [];
@@ -1384,6 +1594,9 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     excludeEl.value = '';
     winnerCountEl.value = 1;
     dedupeEl.checked = false;
+    excludePastWinnersEl.checked = false;
+    ticketBreakdownEl.style.display = 'none';
+    toggleBreakdownBtn.textContent = 'Voir le détail des tickets par personne';
     contestSubjectEl.value = '';
     contestPrizeEl.value = '';
     updateContestMeta();
