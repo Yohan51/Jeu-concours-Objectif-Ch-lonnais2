@@ -289,6 +289,45 @@
   }
   .history-entry .h-winners b{color:var(--sky-dark);}
 
+  .history-stats{
+    display:flex;
+    gap:10px;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+  }
+  .history-stats .stat-box{
+    flex:1;
+    min-width:110px;
+    background:var(--sky-tint);
+    border-radius:8px;
+    padding:12px 14px;
+    text-align:center;
+  }
+  .history-stats .stat-box .num{
+    font-family:'Archivo',sans-serif;
+    font-weight:800;
+    font-size:24px;
+    color:var(--sky-dark);
+    display:block;
+  }
+  .history-stats .stat-box .lbl{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    letter-spacing:.04em;
+    color:var(--muted);
+    text-transform:uppercase;
+  }
+  .repeat-winners{
+    font-size:12.5px;
+    color:var(--muted);
+    margin:-6px 0 16px;
+    line-height:1.6;
+  }
+  .repeat-winners b{color:var(--ink);}
+
+  .cert-btn.replace-btn{color:var(--muted);}
+  .cert-btn.replace-btn:hover{border-color:var(--ink);color:var(--ink);}
+
   button{
     font-family:'Archivo',sans-serif;
     cursor:pointer;
@@ -618,6 +657,12 @@
       <input type="text" id="ticketPageUrl" placeholder="https://tonpseudo.github.io/ticket/" maxlength="200">
       <p class="hint" style="margin-top:8px;">Si renseignée, le QR code devient un vrai lien qui s'ouvre proprement au scan, au lieu d'un simple texte. Laisse vide pour garder le fonctionnement actuel (texte seul, sans hébergement).</p>
     </div>
+    <div class="row" style="margin-top:16px;">
+      <button type="button" id="exportConfigBtn" class="mode-btn" style="flex:1;">Exporter la configuration</button>
+      <button type="button" id="importConfigBtn" class="mode-btn" style="flex:1;">Importer une configuration</button>
+      <input type="file" id="importConfigInput" accept="application/json" style="display:none;">
+    </div>
+    <p class="hint" style="margin-top:8px;">Utile pour transférer tes réglages (URL de la page ticket + historique) à un autre admin, ou les sauvegarder avant de changer d'ordinateur.</p>
   </div>
 
   <div class="card">
@@ -692,12 +737,14 @@ Sophie Bernard
     <div id="resultInner"></div>
     <div class="actions" id="actions" style="display:none;">
       <button id="copyBtn">Copier le résultat</button>
+      <button id="downloadAllBtn">Tout télécharger (certificats)</button>
       <button id="resetBtn">Nouveau tirage</button>
     </div>
   </div>
 
   <div class="card" id="historyCard" style="display:none;">
     <h2>Historique des tirages</h2>
+    <div id="historyStats" class="history-stats"></div>
     <p class="hint">Mémorisé dans ce navigateur uniquement — pas partagé entre admins ni entre appareils.</p>
     <div id="historyList"></div>
     <div class="row" style="margin-top:14px;">
@@ -776,6 +823,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   const resultInner = document.getElementById('resultInner');
   const actions = document.getElementById('actions');
   const copyBtn = document.getElementById('copyBtn');
+  const downloadAllBtn = document.getElementById('downloadAllBtn');
   const resetBtn = document.getElementById('resetBtn');
   const modeButtons = document.querySelectorAll('#modeSelect .mode-btn');
   const contestSubjectEl = document.getElementById('contestSubject');
@@ -825,6 +873,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
   }
 
   let lastWinners = [];
+  let lastPool = [];
 
   const MAX_NAME_LENGTH = 60;
   const HISTORY_KEY = 'objectifChalonnais_history';
@@ -851,13 +900,40 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     return set;
   }
 
+  const historyStatsEl = document.getElementById('historyStats');
+
   function renderHistory(){
     if (drawHistory.length === 0){
       historyCard.style.display = 'none';
       return;
     }
     historyCard.style.display = 'block';
-    historyList.innerHTML = drawHistory.slice().reverse().map(entry => {
+
+    // Tableau de bord
+    const winnerCounts = new Map();
+    drawHistory.forEach(entry => {
+      (entry.winners || []).forEach(n => {
+        const key = n.toLowerCase();
+        if (!winnerCounts.has(key)) winnerCounts.set(key, { name: n, count: 0 });
+        winnerCounts.get(key).count++;
+      });
+    });
+    const totalDraws = drawHistory.length;
+    const distinctWinners = winnerCounts.size;
+    const repeats = Array.from(winnerCounts.values()).filter(w => w.count > 1).sort((a, b) => b.count - a.count);
+
+    historyStatsEl.innerHTML = `
+      <div class="stat-box"><span class="num">${totalDraws}</span><span class="lbl">Tirage${totalDraws>1?'s':''}</span></div>
+      <div class="stat-box"><span class="num">${distinctWinners}</span><span class="lbl">Gagnant${distinctWinners>1?'s':''} distinct${distinctWinners>1?'s':''}</span></div>
+    `;
+
+    let repeatsHtml = '';
+    if (repeats.length > 0){
+      const list = repeats.map(w => `<b>${escapeHtml(w.name)}</b> (${w.count}×)`).join(', ');
+      repeatsHtml = `<p class="repeat-winners">A déjà gagné plusieurs fois : ${list}</p>`;
+    }
+
+    historyList.innerHTML = repeatsHtml + drawHistory.slice().reverse().map(entry => {
       const titleParts = [];
       if (entry.subject) titleParts.push(escapeHtml(entry.subject));
       if (entry.prize) titleParts.push(escapeHtml(entry.prize));
@@ -880,6 +956,63 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     saveHistory(drawHistory);
     renderHistory();
     updateStat();
+  });
+
+  const exportConfigBtn = document.getElementById('exportConfigBtn');
+  const importConfigBtn = document.getElementById('importConfigBtn');
+  const importConfigInput = document.getElementById('importConfigInput');
+
+  exportConfigBtn.addEventListener('click', () => {
+    const config = {
+      type: 'objectif-chalonnais-tirage-config',
+      exportedAt: new Date().toISOString(),
+      ticketPageUrl: ticketPageUrlEl.value.trim(),
+      history: drawHistory
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'config-tirage-objectif-chalonnais.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  });
+
+  importConfigBtn.addEventListener('click', () => importConfigInput.click());
+
+  importConfigInput.addEventListener('change', () => {
+    const file = importConfigInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const config = JSON.parse(reader.result);
+        if (config.type !== 'objectif-chalonnais-tirage-config'){
+          throw new Error("Ce fichier ne semble pas être une configuration valide de l'outil.");
+        }
+        const importedCount = Array.isArray(config.history) ? config.history.length : 0;
+        if (!confirm(`Importer cette configuration ? URL de la page ticket : ${config.ticketPageUrl || '(vide)'}\nHistorique : ${importedCount} tirage(s).\n\nCela remplacera ta configuration actuelle sur cet appareil.`)){
+          return;
+        }
+        if (typeof config.ticketPageUrl === 'string'){
+          ticketPageUrlEl.value = config.ticketPageUrl;
+          try { localStorage.setItem('objectifChalonnais_ticketPageUrl', config.ticketPageUrl); } catch (e) {}
+        }
+        if (Array.isArray(config.history)){
+          drawHistory = config.history;
+          saveHistory(drawHistory);
+          renderHistory();
+        }
+        alert('Configuration importée avec succès.');
+      } catch (err) {
+        alert("Impossible d'importer ce fichier : " + err.message);
+      } finally {
+        importConfigInput.value = '';
+      }
+    };
+    reader.readAsText(file);
   });
 
   function getPool(){
@@ -1069,6 +1202,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 
     const winners = pickWinners(pool, count);
     lastWinners = winners;
+    lastPool = pool;
 
     resultCard.style.display = 'block';
     actions.style.display = 'none';
@@ -1235,6 +1369,12 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     saveHistory(drawHistory);
     renderHistory();
 
+    renderWinnersUI(winners);
+  }
+
+  function renderWinnersUI(winners){
+    const subject = contestSubjectEl.value.trim();
+    const prize = contestPrizeEl.value.trim();
     let meta = '';
     if (subject || prize){
       const parts = [];
@@ -1250,6 +1390,7 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
           <div class="winner-name">${escapeHtml(n)}</div>
           <button type="button" class="cert-btn" data-name="${escapeHtml(n)}">Télécharger le certificat</button>
           <button type="button" class="cert-btn qr-btn" data-name="${escapeHtml(n)}" data-idx="${i}">Voir le QR code</button>
+          <button type="button" class="cert-btn replace-btn" data-idx="${i}">Tirer un remplaçant</button>
           <div class="qr-panel" id="qr-panel-${i}" style="display:none;">
             <div class="qr-box" id="qr-box-${i}"></div>
             <p class="qr-code" id="qr-code-${i}"></p>
@@ -1260,12 +1401,45 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     `</div>`;
     actions.style.display = 'flex';
     drawBtn.disabled = false;
-    resultInner.querySelectorAll('.cert-btn:not(.qr-btn)').forEach(btn => {
+    resultInner.querySelectorAll('.cert-btn:not(.qr-btn):not(.replace-btn)').forEach(btn => {
       btn.addEventListener('click', () => downloadCertificate(btn.dataset.name, btn));
     });
     resultInner.querySelectorAll('.qr-btn').forEach(btn => {
       btn.addEventListener('click', () => toggleQrPanel(btn.dataset.name, btn.dataset.idx));
     });
+    resultInner.querySelectorAll('.replace-btn').forEach(btn => {
+      btn.addEventListener('click', () => replaceWinner(parseInt(btn.dataset.idx, 10)));
+    });
+  }
+
+  function replaceWinner(idx){
+    const oldName = lastWinners[idx];
+    const excludedKeys = new Set(lastWinners.map(n => n.toLowerCase()));
+    const candidates = lastPool.filter(n => !excludedKeys.has(n.toLowerCase()));
+    const uniqueCandidates = Array.from(new Set(candidates.map(n => n.toLowerCase())))
+      .map(key => candidates.find(n => n.toLowerCase() === key));
+
+    if (uniqueCandidates.length === 0){
+      alert("Plus personne d'autre dans la liste pour tirer un remplaçant.");
+      return;
+    }
+    if (!confirm(`Remplacer ${oldName} par une nouvelle personne tirée au sort ?`)){
+      return;
+    }
+
+    const newName = uniqueCandidates[Math.floor(Math.random() * uniqueCandidates.length)];
+    lastWinners[idx] = newName;
+
+    currentClaimCodes.delete(oldName);
+    currentClaimCodes.set(newName, generateClaimCode());
+
+    if (drawHistory.length > 0){
+      drawHistory[drawHistory.length - 1].winners = lastWinners.slice();
+      saveHistory(drawHistory);
+      renderHistory();
+    }
+
+    renderWinnersUI(lastWinners);
   }
 
   let currentClaimCodes = new Map();
@@ -1585,6 +1759,19 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       copyBtn.textContent = 'Copié !';
       setTimeout(() => { copyBtn.textContent = 'Copier le résultat'; }, 1500);
     });
+  });
+
+  downloadAllBtn.addEventListener('click', async () => {
+    if (lastWinners.length === 0) return;
+    downloadAllBtn.disabled = true;
+    const originalText = downloadAllBtn.textContent;
+    for (let i = 0; i < lastWinners.length; i++){
+      downloadAllBtn.textContent = `Téléchargement ${i + 1}/${lastWinners.length}…`;
+      await downloadCertificate(lastWinners[i]);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    downloadAllBtn.textContent = originalText;
+    downloadAllBtn.disabled = false;
   });
 
   resetBtn.addEventListener('click', () => {
