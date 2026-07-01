@@ -1160,6 +1160,52 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
     ctx.stroke();
   }
 
+  function drawEyeIcon(ctx, cx, cy, r){
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy);
+    ctx.quadraticCurveTo(cx, cy - r * 0.8, cx + r, cy);
+    ctx.quadraticCurveTo(cx, cy + r * 0.8, cx - r, cy);
+    ctx.closePath();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#0A0A0A';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.36, 0, 2 * Math.PI);
+    ctx.fillStyle = '#3FAFE0';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#0A0A0A';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.14, 0, 2 * Math.PI);
+    ctx.fillStyle = '#0A0A0A';
+    ctx.fill();
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawDashedLine(ctx, x1, x2, y, color){
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   async function buildCertificateCanvas(winnerName){
     const subject = contestSubjectEl.value.trim();
     const prize = contestPrizeEl.value.trim();
@@ -1168,76 +1214,94 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       try { await document.fonts.ready; } catch (e) { /* ignore */ }
     }
 
-    const W = 1600, H = 1220;
+    const W = 1000, H = 1300;
+    const marginX = 110;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
+    // Fond et bordure
     ctx.fillStyle = '#FCFCFB';
     ctx.fillRect(0, 0, W, H);
-
     ctx.strokeStyle = '#0A0A0A';
     ctx.lineWidth = 3;
-    ctx.strokeRect(44, 44, W - 88, H - 88);
-    ctx.strokeStyle = '#D2D0C8';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(60, 60, W - 120, H - 120);
+    ctx.strokeRect(20, 20, W - 40, H - 40);
 
-    const bracketLen = 34;
-    drawCornerBracket(ctx, 90, 90, 1, 1, bracketLen, '#3FAFE0');
-    drawCornerBracket(ctx, W - 90, 90, -1, 1, bracketLen, '#3FAFE0');
-    drawCornerBracket(ctx, 90, H - 90, 1, -1, bracketLen, '#3FAFE0');
-    drawCornerBracket(ctx, W - 90, H - 90, -1, -1, bracketLen, '#3FAFE0');
-
-    const logo = await getLogoImg();
-    const logoSize = 120;
-    ctx.drawImage(logo, W / 2 - logoSize / 2, 108, logoSize, logoSize);
-
-    ctx.textAlign = 'center';
-
-    ctx.fillStyle = '#6B6A66';
-    ctx.font = '600 20px "IBM Plex Mono"';
-    ctx.fillText('CERTIFICAT DE TIRAGE AU SORT', W / 2, 272);
-
-    ctx.fillStyle = '#1E7FA8';
-    ctx.font = '600 17px "IBM Plex Mono"';
-    ctx.fillText("L'OBJECTIF CHÂLONNAIS", W / 2, 300);
-
-    ctx.fillStyle = '#6B6A66';
-    ctx.font = '400 26px Inter';
-    ctx.fillText('certifie que', W / 2, 400);
-
-    const nameSize = fitFontSize(ctx, winnerName, W - 340, 'Archivo', 800, 64, 30);
-    ctx.font = `800 ${nameSize}px Archivo`;
-    ctx.fillStyle = '#0A0A0A';
-    ctx.fillText(winnerName, W / 2, 470);
-
-    const nameWidth = ctx.measureText(winnerName).width;
-    ctx.strokeStyle = '#3FAFE0';
-    ctx.lineWidth = 3;
+    // Trou de lanière
     ctx.beginPath();
-    ctx.moveTo(W / 2 - nameWidth / 2, 494);
-    ctx.lineTo(W / 2 + nameWidth / 2, 494);
+    ctx.arc(W / 2, 70, 24, 0, 2 * Math.PI);
+    ctx.fillStyle = '#DDDBD5';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#0A0A0A';
     ctx.stroke();
 
-    ctx.fillStyle = '#6B6A66';
-    ctx.font = '400 26px Inter';
-    ctx.fillText(prize ? 'remporte' : 'a été tiré(e) au sort', W / 2, 560);
+    // Bandeau noir
+    roundRect(ctx, 60, 130, W - 120, 140, 14);
+    ctx.fillStyle = '#0A0A0A';
+    ctx.fill();
 
-    if (prize){
-      const prizeSize = fitFontSize(ctx, prize, W - 340, 'Archivo', 700, 36, 22);
-      ctx.font = `700 ${prizeSize}px Archivo`;
-      ctx.fillStyle = '#0A0A0A';
-      ctx.fillText(prize, W / 2, 610);
-    }
+    const logo = await getLogoImg();
+    roundRect(ctx, 90, 160, 80, 80, 10);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.drawImage(logo, 98, 168, 64, 64);
 
-    if (subject){
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '600 19px "IBM Plex Mono"';
+    ctx.fillText("L'OBJECTIF CHÂLONNAIS", 190, 198);
+    ctx.fillStyle = '#3FAFE0';
+    ctx.font = '600 16px "IBM Plex Mono"';
+    ctx.fillText('PASS GAGNANT · JEU CONCOURS', 190, 228);
+
+    // Anneau + oeil
+    const ringCx = W / 2, ringCy = 430, ringR = 110;
+    ctx.beginPath();
+    ctx.arc(ringCx, ringCy, ringR, 0, 2 * Math.PI);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#3FAFE0';
+    ctx.stroke();
+    drawEyeIcon(ctx, ringCx, ringCy, 55);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1E7FA8';
+    ctx.font = '600 20px "IBM Plex Mono"';
+    ctx.fillText('GAGNANT', W / 2, ringCy + ringR + 50);
+
+    const nameSize = fitFontSize(ctx, winnerName, W - 160, 'Archivo', 800, 52, 26);
+    ctx.font = `800 ${nameSize}px Archivo`;
+    ctx.fillStyle = '#0A0A0A';
+    ctx.fillText(winnerName, W / 2, ringCy + ringR + 115);
+
+    // Lignes d'info
+    const rows = [];
+    if (subject) rows.push(['CONCOURS', subject]);
+    if (prize) rows.push(['LOT', prize]);
+    const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    rows.push(['DATE', dateStr]);
+
+    let rowY = ringCy + ringR + 165;
+    const rowHeight = 68;
+    drawDashedLine(ctx, marginX, W - marginX, rowY, '#E4E2DC');
+    rows.forEach(([label, value]) => {
+      rowY += rowHeight;
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#6B6A66';
-      ctx.font = '400 22px Inter';
-      const subjectLine = `dans le cadre du concours « ${subject} »`;
-      ctx.fillText(subjectLine, W / 2, prize ? 665 : 610);
-    }
+      ctx.font = '500 15px "IBM Plex Mono"';
+      ctx.fillText(label, marginX, rowY - 12);
 
+      ctx.textAlign = 'right';
+      const valueSize = fitFontSize(ctx, value, 420, 'Inter', 600, 20, 14);
+      ctx.font = `600 ${valueSize}px Inter`;
+      ctx.fillStyle = '#0A0A0A';
+      ctx.fillText(value, W - marginX, rowY - 12);
+
+      drawDashedLine(ctx, marginX, W - marginX, rowY, '#E4E2DC');
+    });
+
+    // QR + code
+    let qrY = rowY + 55;
     if (typeof QRCode !== 'undefined'){
       try {
         const { text, code } = buildClaimPayload(winnerName);
@@ -1245,19 +1309,17 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
         qrContainer.style.position = 'fixed';
         qrContainer.style.left = '-9999px';
         document.body.appendChild(qrContainer);
-        new QRCode(qrContainer, { text, width: 260, height: 260, colorDark: '#0A0A0A', colorLight: '#FCFCFB', correctLevel: QRCode.CorrectLevel.M });
+        new QRCode(qrContainer, { text, width: 220, height: 220, colorDark: '#0A0A0A', colorLight: '#FCFCFB', correctLevel: QRCode.CorrectLevel.M });
         const qrSource = qrContainer.querySelector('canvas') || qrContainer.querySelector('img');
         if (qrSource){
-          const qrSize = 150;
-          const qrX = W / 2 - qrSize / 2;
-          const qrY = 745;
-          ctx.fillStyle = '#6B6A66';
-          ctx.font = '500 15px "IBM Plex Mono"';
-          ctx.fillText('TICKET DE RETRAIT DU LOT', W / 2, qrY - 16);
-          ctx.drawImage(qrSource, qrX, qrY, qrSize, qrSize);
-          ctx.fillStyle = '#6B6A66';
-          ctx.font = '500 15px "IBM Plex Mono"';
-          ctx.fillText(`Code : ${code}`, W / 2, qrY + qrSize + 26);
+          const qrSize = 180;
+          ctx.drawImage(qrSource, W / 2 - qrSize / 2, qrY, qrSize, qrSize);
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#0A0A0A';
+          ctx.font = '700 24px "IBM Plex Mono"';
+          const spacedCode = code.split('').join('\u2009');
+          ctx.fillText(spacedCode, W / 2, qrY + qrSize + 42);
+          qrY = qrY + qrSize + 42;
         }
         document.body.removeChild(qrContainer);
       } catch (err) {
@@ -1265,10 +1327,10 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
       }
     }
 
+    ctx.textAlign = 'center';
     ctx.fillStyle = '#6B6A66';
-    ctx.font = '400 18px "IBM Plex Mono"';
-    const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    ctx.fillText(dateStr, W / 2, H - 70);
+    ctx.font = '500 14px "IBM Plex Mono"';
+    ctx.fillText('TICKET DE RETRAIT DU LOT', W / 2, qrY + 40);
 
     return canvas;
   }
